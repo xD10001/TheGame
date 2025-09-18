@@ -1,4 +1,3 @@
- codex/add-game-element-to-portfolio-website-zkqomn
 (() => {
     const canvas = document.getElementById('game-canvas');
     const ctx = canvas.getContext('2d');
@@ -9,6 +8,8 @@
     const MAX_SPEED = 6;
     const JUMP_FORCE = 16;
     const FRICTION = 0.85;
+    const PLAYER_WIDTH = 36;
+    const PLAYER_HEIGHT = 56;
     const PLAYER_WIDTH = 32;
     const PLAYER_HEIGHT = 46;
 
@@ -16,6 +17,18 @@
         {
             name: 'Onboarding-Werkstatt',
             tiles: [
+                '..........................',
+                '....S.....................',
+                '..........C...............',
+                '.......====.......====....',
+                '..................B.......',
+                '....C.........####........',
+                '###....#####..............',
+                '..P...........W......B...E',
+                '########....######....####',
+                '########....######....####',
+                '########..................',
+                '##########################'
                 '....................',
                 '....................',
                 '....S...............',
@@ -33,6 +46,18 @@
         {
             name: 'Sprint der Schluchten',
             tiles: [
+                '........S.................',
+                '.............C............',
+                '......====......====......',
+                '..............B...........',
+                '...C.....####.............',
+                '#####.............#####...',
+                '..P....W.............B...E',
+                '########..########..######',
+                '########..########..######',
+                '########..................',
+                '########..................',
+                '##########################'
                 '....................',
                 '.....S..............',
                 '............C.......',
@@ -50,6 +75,18 @@
         {
             name: 'Release-Party',
             tiles: [
+                '....S.....................',
+                '..............C...........',
+                '.....====....====....====.',
+                '......B.............B.....',
+                '..C.........#######.......',
+                '#####....#####......####..',
+                '..P....W..............B..E',
+                '########..########..######',
+                '########..########..######',
+                '########..................',
+                '########..................',
+                '##########################'
                 '....................',
                 '....S...............',
                 '..........C.........',
@@ -89,6 +126,12 @@
     const levelSummary = document.getElementById('level-summary');
     const victorySummary = document.getElementById('victory-summary');
 
+    const puzzleGrid = document.getElementById('puzzle-grid');
+    const puzzlePreview = document.getElementById('puzzle-preview');
+    const puzzlePreviewCtx = puzzlePreview ? puzzlePreview.getContext('2d') : null;
+    const PUZZLE_SIZE = puzzleGrid ? Number(puzzleGrid.dataset.size || 4) : 4;
+    let puzzleTiles = [];
+    let emptyIndex = PUZZLE_SIZE * PUZZLE_SIZE - 1;
     const puzzlePiecesContainer = document.querySelector('.puzzle__pieces');
     const puzzlePieces = Array.from(document.querySelectorAll('.puzzle-piece'));
     const puzzleSlots = Array.from(document.querySelectorAll('.puzzle-slot'));
@@ -151,6 +194,172 @@
         }, 50);
     }
 
+    function createSolvedPuzzle() {
+        return Array.from({ length: PUZZLE_SIZE * PUZZLE_SIZE }, (_, index) => (
+            index === PUZZLE_SIZE * PUZZLE_SIZE - 1 ? 0 : index + 1
+        ));
+    }
+
+    function countInversions(tiles) {
+        let inversions = 0;
+        for (let i = 0; i < tiles.length; i += 1) {
+            if (tiles[i] === 0) {
+                continue;
+            }
+            for (let j = i + 1; j < tiles.length; j += 1) {
+                if (tiles[j] !== 0 && tiles[i] > tiles[j]) {
+                    inversions += 1;
+                }
+            }
+        }
+        return inversions;
+    }
+
+    function isPuzzleSolvable(tiles) {
+        const inversions = countInversions(tiles);
+        if (PUZZLE_SIZE % 2 === 1) {
+            return inversions % 2 === 0;
+        }
+        const emptyRowFromBottom = PUZZLE_SIZE - Math.floor(tiles.indexOf(0) / PUZZLE_SIZE);
+        if (emptyRowFromBottom % 2 === 0) {
+            return inversions % 2 === 1;
+        }
+        return inversions % 2 === 0;
+    }
+
+    function shufflePuzzleTiles() {
+        puzzleTiles = createSolvedPuzzle();
+        do {
+            for (let i = puzzleTiles.length - 1; i > 0; i -= 1) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [puzzleTiles[i], puzzleTiles[j]] = [puzzleTiles[j], puzzleTiles[i]];
+            }
+            emptyIndex = puzzleTiles.indexOf(0);
+        } while (!isPuzzleSolvable(puzzleTiles) || checkPuzzleSolved());
+    }
+
+    function renderPuzzleTiles() {
+        if (!puzzleGrid) {
+            return;
+        }
+        puzzleGrid.innerHTML = '';
+        const fragment = document.createDocumentFragment();
+        puzzleTiles.forEach((value, index) => {
+            const tile = document.createElement('button');
+            tile.type = 'button';
+            tile.dataset.index = String(index);
+            tile.dataset.value = String(value);
+            tile.className = 'slider-puzzle__tile';
+            tile.setAttribute('tabindex', value === 0 ? '-1' : '0');
+            if (value === 0) {
+                tile.classList.add('slider-puzzle__tile--empty');
+                tile.setAttribute('aria-label', 'Leeres Feld');
+                tile.disabled = true;
+            } else {
+                tile.textContent = String(value);
+                tile.setAttribute('aria-label', `Kachel ${value}`);
+            }
+            fragment.appendChild(tile);
+        });
+        puzzleGrid.appendChild(fragment);
+    }
+
+    function drawPuzzlePreview() {
+        if (!puzzlePreviewCtx || !puzzlePreview) {
+            return;
+        }
+        const { width, height } = puzzlePreview;
+        puzzlePreviewCtx.clearRect(0, 0, width, height);
+        const gradient = puzzlePreviewCtx.createLinearGradient(0, 0, width, height);
+        gradient.addColorStop(0, '#0f172a');
+        gradient.addColorStop(1, '#1e293b');
+        puzzlePreviewCtx.fillStyle = gradient;
+        puzzlePreviewCtx.fillRect(0, 0, width, height);
+
+        // Pixel-Hintergrund
+        for (let x = 0; x < width; x += 32) {
+            for (let y = 0; y < height; y += 32) {
+                puzzlePreviewCtx.fillStyle = (x / 32 + y / 32) % 2 === 0 ? 'rgba(56, 189, 248, 0.08)' : 'rgba(148, 163, 184, 0.08)';
+                puzzlePreviewCtx.fillRect(x, y, 32, 32);
+            }
+        }
+
+        // Plattform
+        puzzlePreviewCtx.fillStyle = '#1e293b';
+        puzzlePreviewCtx.fillRect(32, height - 64, width - 64, 40);
+        puzzlePreviewCtx.fillStyle = '#0ea5e9';
+        puzzlePreviewCtx.fillRect(32, height - 72, width - 64, 8);
+
+        // Figur (Roland) in Pixeloptik
+        const baseX = width / 2 - 24;
+        const baseY = height - 104;
+        puzzlePreviewCtx.fillStyle = '#fbbf24'; // Haare
+        puzzlePreviewCtx.fillRect(baseX + 12, baseY, 24, 12);
+        puzzlePreviewCtx.fillStyle = '#fcd34d';
+        puzzlePreviewCtx.fillRect(baseX + 8, baseY + 12, 32, 28); // Kopf
+        puzzlePreviewCtx.fillStyle = '#1d4ed8';
+        puzzlePreviewCtx.fillRect(baseX + 6, baseY + 40, 36, 40); // Jacke
+        puzzlePreviewCtx.fillStyle = '#0f172a';
+        puzzlePreviewCtx.fillRect(baseX + 6, baseY + 68, 36, 24); // Hose
+        puzzlePreviewCtx.fillStyle = '#e2e8f0';
+        puzzlePreviewCtx.fillRect(baseX + 10, baseY + 52, 28, 14); // Shirt
+        puzzlePreviewCtx.fillStyle = '#94a3b8';
+        puzzlePreviewCtx.fillRect(baseX + 4, baseY + 92, 16, 12); // linker Schuh
+        puzzlePreviewCtx.fillRect(baseX + 28, baseY + 92, 16, 12); // rechter Schuh
+
+        // Laptop
+        puzzlePreviewCtx.fillStyle = '#38bdf8';
+        puzzlePreviewCtx.fillRect(baseX - 42, baseY + 30, 36, 24);
+        puzzlePreviewCtx.fillStyle = '#0f172a';
+        puzzlePreviewCtx.fillRect(baseX - 40, baseY + 32, 32, 20);
+
+        // Kaffetasse
+        puzzlePreviewCtx.fillStyle = '#f97316';
+        puzzlePreviewCtx.fillRect(baseX + 48, baseY + 44, 18, 18);
+        puzzlePreviewCtx.strokeStyle = '#f97316';
+        puzzlePreviewCtx.lineWidth = 4;
+        puzzlePreviewCtx.strokeRect(baseX + 64, baseY + 50, 12, 8);
+    }
+
+    function attemptMove(index) {
+        if (!Number.isInteger(index) || index < 0 || index >= puzzleTiles.length) {
+            return;
+        }
+        const row = Math.floor(index / PUZZLE_SIZE);
+        const col = index % PUZZLE_SIZE;
+        const emptyRow = Math.floor(emptyIndex / PUZZLE_SIZE);
+        const emptyCol = emptyIndex % PUZZLE_SIZE;
+        const isAdjacent = Math.abs(row - emptyRow) + Math.abs(col - emptyCol) === 1;
+        if (!isAdjacent) {
+            return;
+        }
+        const previousEmpty = emptyIndex;
+        [puzzleTiles[emptyIndex], puzzleTiles[index]] = [puzzleTiles[index], puzzleTiles[emptyIndex]];
+        emptyIndex = index;
+        renderPuzzleTiles();
+        const movedTile = puzzleGrid?.querySelector(`.slider-puzzle__tile[data-index="${previousEmpty}"]`);
+        if (movedTile) {
+            movedTile.classList.add('slider-puzzle__tile--animate');
+            setTimeout(() => movedTile.classList.remove('slider-puzzle__tile--animate'), 220);
+        }
+        if (checkPuzzleSolved()) {
+            resolvePuzzleReward();
+        }
+    }
+
+    function checkPuzzleSolved() {
+        if (puzzleTiles.length === 0) {
+            return false;
+        }
+        for (let i = 0; i < puzzleTiles.length - 1; i += 1) {
+            if (puzzleTiles[i] !== i + 1) {
+                return false;
+            }
+        }
+        return puzzleTiles[puzzleTiles.length - 1] === 0;
+    }
+
+    function resolvePuzzleReward() {
     function resetPuzzle() {
         puzzlePieces.forEach(piece => {
             piece.dataset.locked = 'false';
@@ -247,6 +456,11 @@
         } else {
             showVictory();
         }
+    }
+
+    function initPuzzle() {
+        shufflePuzzleTiles();
+        renderPuzzleTiles();
     }
 
     function updateHUD() {
@@ -484,6 +698,7 @@
     }
 
     function handleExit() {
+        if (!exit || state.current !== 'running' || player.lives <= 0) {
         if (!exit) {
             return;
         }
@@ -497,6 +712,8 @@
         state.awaitingNextLevel = true;
         levelSummary.textContent = `Du hast ${state.score} Punkte gesammelt und ${player.lives} Leben übrig.`;
         puzzleButton.textContent = state.levelIndex === LEVELS.length - 1
+            ? 'Finales Schiebe-Puzzle'
+            : 'Zum Schiebe-Puzzle';
             ? 'Finales Bonus-Puzzle'
             : 'Zum Bonus-Puzzle';
         closeOverlay(overlays.gameOver);
@@ -667,6 +884,21 @@
             return;
         }
         updatePlayer(delta);
+        if (state.current !== 'running') {
+            return;
+        }
+        updateEnemies();
+        if (state.current !== 'running') {
+            return;
+        }
+        updateProjectiles();
+        if (state.current !== 'running') {
+            return;
+        }
+        collectItems();
+        if (state.current !== 'running') {
+            return;
+        }
         updateEnemies();
         updateProjectiles();
         collectItems();
@@ -702,12 +934,75 @@
 
     function drawPlayer() {
         ctx.save();
+        ctx.translate(player.x, player.y);
+        if (player.facing < 0) {
+            ctx.translate(player.width, 0);
         ctx.translate(player.x + player.width / 2, player.y + player.height / 2);
         if (player.facing < 0) {
             ctx.scale(-1, 1);
         }
         const alpha = player.invulnerable > 0 ? 0.5 + Math.sin(Date.now() / 60) * 0.3 : 1;
         ctx.globalAlpha = alpha;
+
+        const centerX = player.width / 2;
+
+        // Schatten
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.35)';
+        ctx.beginPath();
+        ctx.ellipse(centerX, player.height + 4, player.width / 2, 6, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Hinterer Arm
+        ctx.fillStyle = '#1e3a8a';
+        ctx.fillRect(centerX + 10, 24, 8, 24);
+
+        // Hose
+        ctx.fillStyle = '#1f2937';
+        ctx.fillRect(centerX - 16, 44, 32, 18);
+
+        // Schuhe
+        ctx.fillStyle = '#94a3b8';
+        ctx.fillRect(centerX - 18, 62, 16, 8);
+        ctx.fillRect(centerX + 2, 62, 16, 8);
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(centerX - 18, 68, 16, 4);
+        ctx.fillRect(centerX + 2, 68, 16, 4);
+
+        // Körper
+        ctx.fillStyle = '#1d4ed8';
+        ctx.fillRect(centerX - 18, 20, 36, 30);
+        ctx.fillStyle = '#2563eb';
+        ctx.fillRect(centerX - 8, 20, 16, 30);
+        ctx.fillStyle = '#e2e8f0';
+        ctx.fillRect(centerX - 12, 28, 24, 10);
+        ctx.fillStyle = '#f97316';
+        ctx.fillRect(centerX - 14, 22, 28, 6); // Schal
+
+        // Vorderer Arm
+        ctx.fillStyle = '#3b82f6';
+        ctx.fillRect(centerX - 26, 26, 10, 26);
+        ctx.fillStyle = '#f4c7b5';
+        ctx.fillRect(centerX - 24, 46, 8, 8);
+
+        // Kopf
+        ctx.fillStyle = '#f4c7b5';
+        ctx.fillRect(centerX - 14, 0, 28, 22);
+        ctx.fillStyle = '#2c1810';
+        ctx.fillRect(centerX - 16, -4, 32, 10);
+        ctx.fillRect(centerX + 6, 2, 8, 10);
+        ctx.fillStyle = '#fde68a';
+        ctx.fillRect(centerX - 12, 12, 24, 4);
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(centerX - 10, 10, 6, 4);
+        ctx.fillRect(centerX + 4, 10, 6, 4);
+        ctx.fillRect(centerX - 2, 16, 4, 4);
+
+        // Laptop-Tasche
+        ctx.fillStyle = '#475569';
+        ctx.fillRect(centerX + 12, 28, 10, 20);
+        ctx.fillStyle = '#38bdf8';
+        ctx.fillRect(centerX + 13, 30, 8, 16);
+
         ctx.fillStyle = '#38bdf8';
         ctx.fillRect(-player.width / 2, -player.height / 2, player.width, player.height);
         ctx.fillStyle = '#0f172a';
@@ -728,6 +1023,43 @@
                 return;
             }
             ctx.save();
+            ctx.translate(enemy.x, enemy.y);
+
+            // Unterer Schatten
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.25)';
+            ctx.beginPath();
+            ctx.ellipse(enemy.width / 2, enemy.height + 4, enemy.width / 2, 4, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Roboterkörper
+            ctx.fillStyle = '#ef4444';
+            ctx.fillRect(4, 6, enemy.width - 8, enemy.height - 12);
+            ctx.fillStyle = '#b91c1c';
+            ctx.fillRect(4, 6, enemy.width - 8, 10);
+            ctx.fillStyle = '#f97316';
+            ctx.fillRect(enemy.width / 2 - 6, 8, 12, 4);
+
+            // Bildschirm
+            ctx.fillStyle = '#0f172a';
+            ctx.fillRect(8, 14, enemy.width - 16, 12);
+            ctx.fillStyle = '#38bdf8';
+            ctx.fillRect(10, 16, enemy.width - 20, 8);
+            ctx.fillStyle = '#f8fafc';
+            ctx.fillRect(12, 18, 4, 4);
+            ctx.fillRect(enemy.width - 16, 18, 4, 4);
+
+            // Beine
+            ctx.fillStyle = '#475569';
+            ctx.fillRect(6, enemy.height - 4, 6, 10);
+            ctx.fillRect(enemy.width - 12, enemy.height - 4, 6, 10);
+
+            // Antennen
+            ctx.fillStyle = '#facc15';
+            ctx.fillRect(enemy.width / 2 - 1, 0, 2, 6);
+            ctx.beginPath();
+            ctx.arc(enemy.width / 2, 0, 3, 0, Math.PI * 2);
+            ctx.fill();
+
             ctx.translate(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2);
             ctx.fillStyle = '#ef4444';
             ctx.beginPath();
@@ -856,6 +1188,38 @@
         startGame();
     });
 
+    if (puzzleGrid) {
+        puzzleGrid.addEventListener('click', event => {
+            const tile = event.target.closest('.slider-puzzle__tile');
+            if (!tile || tile.classList.contains('slider-puzzle__tile--empty')) {
+                return;
+            }
+            const tileIndex = Number.parseInt(tile.dataset.index || '', 10);
+            if (Number.isNaN(tileIndex)) {
+                return;
+            }
+            attemptMove(tileIndex);
+        });
+
+        puzzleGrid.addEventListener('keydown', event => {
+            if (state.current !== 'puzzle') {
+                return;
+            }
+            const tile = event.target.closest('.slider-puzzle__tile');
+            if (!tile || tile.classList.contains('slider-puzzle__tile--empty')) {
+                return;
+            }
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                const tileIndex = Number.parseInt(tile.dataset.index || '', 10);
+                if (Number.isNaN(tileIndex)) {
+                    return;
+                }
+                attemptMove(tileIndex);
+            }
+        });
+    }
+
     puzzleButton.addEventListener('click', () => {
         if (!state.awaitingNextLevel) {
             return;
@@ -904,6 +1268,14 @@
         }
     });
 
+    drawPuzzlePreview();
+    if (puzzleGrid) {
+        puzzleTiles = createSolvedPuzzle();
+        emptyIndex = puzzleTiles.indexOf(0);
+        renderPuzzleTiles();
+    }
+    requestAnimationFrame(gameLoop);
+})();
     setupPuzzleDnD();
     requestAnimationFrame(gameLoop);
 })();
