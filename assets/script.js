@@ -10,6 +10,8 @@
     const FRICTION = 0.85;
     const PLAYER_WIDTH = 36;
     const PLAYER_HEIGHT = 56;
+    const PLAYER_WIDTH = 32;
+    const PLAYER_HEIGHT = 46;
 
     const LEVELS = [
         {
@@ -27,6 +29,18 @@
                 '########....######....####',
                 '########..................',
                 '##########################'
+                '....................',
+                '....................',
+                '....S...............',
+                '....................',
+                '...===..............',
+                '.............C......',
+                '..C....B............',
+                '#####.....====......',
+                '..P........W....E...',
+                '##########..#######.',
+                '##########..#######.',
+                '####################'
             ]
         },
         {
@@ -44,6 +58,18 @@
                 '########..................',
                 '########..................',
                 '##########################'
+                '....................',
+                '.....S..............',
+                '............C.......',
+                '..........====......',
+                '..C.................',
+                '....====.......B....',
+                '###......#####......',
+                '..P....W......E.....',
+                '####..#######..#####',
+                '####..#######..#####',
+                '####...............#',
+                '####################'
             ]
         },
         {
@@ -61,6 +87,18 @@
                 '########..................',
                 '########..................',
                 '##########################'
+                '....................',
+                '....S...............',
+                '..........C.........',
+                '....====.......====.',
+                '....................',
+                '..B......W.....B....',
+                '#####..######..#####',
+                '..P............E....',
+                '####..########..####',
+                '####..########..####',
+                '####...............#',
+                '####################'
             ]
         }
     ];
@@ -94,6 +132,9 @@
     const PUZZLE_SIZE = puzzleGrid ? Number(puzzleGrid.dataset.size || 4) : 4;
     let puzzleTiles = [];
     let emptyIndex = PUZZLE_SIZE * PUZZLE_SIZE - 1;
+    const puzzlePiecesContainer = document.querySelector('.puzzle__pieces');
+    const puzzlePieces = Array.from(document.querySelectorAll('.puzzle-piece'));
+    const puzzleSlots = Array.from(document.querySelectorAll('.puzzle-slot'));
 
     const restartButtons = Array.from(document.querySelectorAll('[data-action="restart"]'));
 
@@ -319,6 +360,90 @@
     }
 
     function resolvePuzzleReward() {
+    function resetPuzzle() {
+        puzzlePieces.forEach(piece => {
+            piece.dataset.locked = 'false';
+            piece.setAttribute('draggable', 'true');
+            piece.style.removeProperty('top');
+            piece.style.removeProperty('left');
+            piece.style.removeProperty('position');
+            piece.classList.remove('correct');
+            puzzlePiecesContainer.appendChild(piece);
+        });
+        puzzleSlots.forEach(slot => {
+            slot.dataset.filled = 'false';
+            slot.textContent = slot.dataset.accept === 'api'
+                ? 'API-Endpunkt'
+                : slot.dataset.accept === 'ui'
+                    ? 'Frontend'
+                    : 'Deployment';
+            slot.classList.remove('shake');
+        });
+    }
+
+    function shufflePuzzlePieces() {
+        const container = document.querySelector('.puzzle__pieces');
+        const shuffled = puzzlePieces.slice().sort(() => Math.random() - 0.5);
+        shuffled.forEach(piece => container.appendChild(piece));
+    }
+
+    function initPuzzle() {
+        resetPuzzle();
+        shufflePuzzlePieces();
+    }
+
+    function setupPuzzleDnD() {
+        puzzlePieces.forEach(piece => {
+            piece.addEventListener('dragstart', event => {
+                if (piece.dataset.locked === 'true') {
+                    event.preventDefault();
+                    return;
+                }
+                event.dataTransfer.setData('text/plain', piece.dataset.id);
+                setTimeout(() => piece.classList.add('dragging'), 0);
+            });
+
+            piece.addEventListener('dragend', () => {
+                piece.classList.remove('dragging');
+            });
+        });
+
+        puzzleSlots.forEach(slot => {
+            slot.addEventListener('dragover', event => {
+                event.preventDefault();
+            });
+
+            slot.addEventListener('drop', event => {
+                event.preventDefault();
+                const pieceId = event.dataTransfer.getData('text/plain');
+                const piece = puzzlePieces.find(p => p.dataset.id === pieceId);
+                if (!piece || piece.dataset.locked === 'true') {
+                    return;
+                }
+
+                if (slot.dataset.accept === pieceId) {
+                    slot.dataset.filled = 'true';
+                    slot.classList.remove('shake');
+                    slot.textContent = '';
+                    piece.dataset.locked = 'true';
+                    piece.setAttribute('draggable', 'false');
+                    piece.classList.add('correct');
+                    slot.appendChild(piece);
+                    piece.style.position = 'static';
+                    checkPuzzleCompletion();
+                } else {
+                    slot.classList.add('shake');
+                    setTimeout(() => slot.classList.remove('shake'), 400);
+                }
+            });
+        });
+    }
+
+    function checkPuzzleCompletion() {
+        const solved = puzzleSlots.every(slot => slot.dataset.filled === 'true');
+        if (!solved) {
+            return;
+        }
         state.score += 500;
         player.hp = Math.min(player.maxHP, player.hp + 30);
         updateHUD();
@@ -574,6 +699,7 @@
 
     function handleExit() {
         if (!exit || state.current !== 'running' || player.lives <= 0) {
+        if (!exit) {
             return;
         }
         if (rectsOverlap(player, exit)) {
@@ -588,6 +714,8 @@
         puzzleButton.textContent = state.levelIndex === LEVELS.length - 1
             ? 'Finales Schiebe-Puzzle'
             : 'Zum Schiebe-Puzzle';
+            ? 'Finales Bonus-Puzzle'
+            : 'Zum Bonus-Puzzle';
         closeOverlay(overlays.gameOver);
         openOverlay(overlays.levelComplete);
     }
@@ -771,6 +899,9 @@
         if (state.current !== 'running') {
             return;
         }
+        updateEnemies();
+        updateProjectiles();
+        collectItems();
         handleExit();
     }
 
@@ -806,6 +937,8 @@
         ctx.translate(player.x, player.y);
         if (player.facing < 0) {
             ctx.translate(player.width, 0);
+        ctx.translate(player.x + player.width / 2, player.y + player.height / 2);
+        if (player.facing < 0) {
             ctx.scale(-1, 1);
         }
         const alpha = player.invulnerable > 0 ? 0.5 + Math.sin(Date.now() / 60) * 0.3 : 1;
@@ -870,6 +1003,16 @@
         ctx.fillStyle = '#38bdf8';
         ctx.fillRect(centerX + 13, 30, 8, 16);
 
+        ctx.fillStyle = '#38bdf8';
+        ctx.fillRect(-player.width / 2, -player.height / 2, player.width, player.height);
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(-player.width / 2 + 6, -player.height / 2 + 6, player.width - 12, player.height - 20);
+        ctx.fillStyle = '#facc15';
+        ctx.fillRect(-player.width / 2 + 4, player.height / 2 - 14, player.width - 8, 8);
+        ctx.fillStyle = '#e2e8f0';
+        ctx.beginPath();
+        ctx.arc(player.width / 2 - 12, -player.height / 2 + 14, 6, 0, Math.PI * 2);
+        ctx.fill();
         ctx.restore();
         ctx.globalAlpha = 1;
     }
@@ -917,6 +1060,24 @@
             ctx.arc(enemy.width / 2, 0, 3, 0, Math.PI * 2);
             ctx.fill();
 
+            ctx.translate(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2);
+            ctx.fillStyle = '#ef4444';
+            ctx.beginPath();
+            ctx.ellipse(0, 0, enemy.width / 2, enemy.height / 2, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#0f172a';
+            ctx.lineWidth = 2;
+            for (let i = -1; i <= 1; i += 1) {
+                ctx.beginPath();
+                ctx.moveTo(i * 10, enemy.height / 2);
+                ctx.lineTo(i * 10 + (i === 0 ? 0 : 6 * Math.sign(i)), enemy.height / 2 + 12);
+                ctx.stroke();
+            }
+            ctx.fillStyle = '#facc15';
+            ctx.beginPath();
+            ctx.arc(-6, -4, 4, 0, Math.PI * 2);
+            ctx.arc(6, -4, 4, 0, Math.PI * 2);
+            ctx.fill();
             ctx.restore();
         });
     }
@@ -1115,3 +1276,267 @@
     }
     requestAnimationFrame(gameLoop);
 })();
+    setupPuzzleDnD();
+    requestAnimationFrame(gameLoop);
+})();
+
+
+const stations = Array.from(document.querySelectorAll('.station'));
+const progressBar = document.querySelector('.progress__bar span');
+const progressLabel = document.querySelector('.progress__label');
+const mainElement = document.querySelector('main');
+const heroStart = document.querySelector('[data-action="start"]');
+const finalSection = document.getElementById('final-stop');
+const replayButton = finalSection?.querySelector('[data-action="replay"]');
+const hornButton = document.querySelector('[data-horn]');
+const hornSecret = document.querySelector('.horn-secret');
+
+let currentIndex = -1;
+let hornTaps = 0;
+let hornTimeout;
+
+const stationState = new Map();
+stations.forEach((station) => stationState.set(station.id, { completed: false }));
+
+function updateProgress() {
+  const total = stations.length;
+  const current = Math.min(Math.max(currentIndex + 1, 0), total);
+  const percent = total === 0 ? 0 : Math.min((current / total) * 100, 100);
+  if (progressBar) progressBar.style.width = `${percent}%`;
+  if (progressLabel) progressLabel.textContent = `Station ${current} von ${total}`;
+}
+
+function showStation(index) {
+  stations.forEach((station, i) => {
+    station.hidden = i !== index;
+  });
+  if (finalSection) finalSection.hidden = true;
+  currentIndex = index;
+  updateProgress();
+}
+
+function showFinal() {
+  stations.forEach((station) => (station.hidden = true));
+  if (finalSection) finalSection.hidden = false;
+  currentIndex = stations.length;
+  updateProgress();
+}
+
+function enableNext(station) {
+  const nextButton = station.querySelector('[data-action="next"]');
+  if (nextButton) nextButton.disabled = false;
+  if (!stationState.has(station.id)) {
+    stationState.set(station.id, { completed: true });
+  } else {
+    stationState.get(station.id).completed = true;
+  }
+}
+
+function handleNavigation(event) {
+  const button = event.target.closest('[data-action]');
+  if (!button) return;
+
+  const action = button.dataset.action;
+  if (action === 'start') {
+    showStation(0);
+    if (mainElement) {
+      window.scrollTo({ top: mainElement.offsetTop, behavior: 'smooth' });
+    }
+  }
+
+  if (currentIndex < 0) return;
+  const currentStation = stations[currentIndex];
+
+  switch (action) {
+    case 'next': {
+      const state = stationState.get(currentStation.id);
+      if (!state || !state.completed) return;
+      if (currentIndex === stations.length - 1) {
+        showFinal();
+        if (mainElement) {
+          window.scrollTo({ top: mainElement.offsetTop, behavior: 'smooth' });
+        }
+      } else {
+        showStation(currentIndex + 1);
+      }
+      break;
+    }
+    case 'prev': {
+      if (currentIndex === 0) {
+        currentStation.hidden = true;
+        currentIndex = -1;
+        updateProgress();
+        break;
+      }
+      if (currentIndex > 0) {
+        showStation(currentIndex - 1);
+      }
+      break;
+    }
+    case 'replay': {
+      showStation(0);
+      if (mainElement) {
+        window.scrollTo({ top: mainElement.offsetTop, behavior: 'smooth' });
+      }
+      break;
+    }
+    default:
+      break;
+  }
+}
+
+document.addEventListener('click', handleNavigation);
+
+function initStoryStation(station) {
+  const choices = station.querySelectorAll('[data-story-choice]');
+  const result = station.querySelector('[data-result="story"]');
+  const achievement = station.querySelector('[data-achievement]');
+
+  choices.forEach((choice) => {
+    choice.addEventListener('click', () => {
+      const key = choice.dataset.storyChoice;
+      const data = {
+        cms: 'CMS-Relaunch: Ich habe Content-Modelle entschlackt und Versionierung eingeführt.',
+        intranet: 'Kommunikations-App: Fokus auf Moderationsrechte und mobile Performance.'
+      };
+      if (result) {
+        result.textContent = data[key];
+      }
+      if (achievement) {
+        achievement.textContent = 'Recruiter-Notiz: Ich liefere auch unter Zeitdruck planbar aus.';
+      }
+      choices.forEach((btn) => btn.classList.toggle('is-active', btn === choice));
+      enableNext(station);
+    });
+  });
+}
+
+function initSkillStation(station) {
+  const options = station.querySelectorAll('[data-correct]');
+  const result = station.querySelector('[data-result="skills"]');
+
+  options.forEach((option) => {
+    option.addEventListener('click', () => {
+      const isCorrect = option.dataset.correct === 'true';
+      const proof = option.dataset.proof;
+      options.forEach((btn) => btn.classList.remove('is-active', 'is-wrong'));
+      option.classList.add(isCorrect ? 'is-active' : 'is-wrong');
+      if (result) {
+        result.textContent = proof;
+        result.style.color = isCorrect ? 'var(--secondary)' : '#f87171';
+      }
+      if (isCorrect) enableNext(station);
+    });
+  });
+}
+
+function initProjectsStation(station) {
+  const projects = station.querySelectorAll('[data-project]');
+  const result = station.querySelector('[data-result="projects"]');
+  const opened = new Set();
+
+  projects.forEach((project) => {
+    const trigger = project.querySelector('[data-project-open]');
+    const details = project.querySelector('.project-details');
+    if (!trigger || !details) return;
+    trigger.addEventListener('click', () => {
+      const hidden = details.hasAttribute('hidden');
+      details.toggleAttribute('hidden', !hidden);
+      project.classList.toggle('is-active', hidden);
+      if (hidden) {
+        opened.add(project);
+      }
+      if (result) {
+        result.textContent = `${opened.size} Ticket(s) geprüft – gerne zeige ich mehr im Call.`;
+      }
+      if (opened.size >= 2) {
+        enableNext(station);
+      }
+    });
+  });
+}
+
+function initPersonalityStation(station) {
+  const traits = station.querySelectorAll('[data-trait]');
+  const result = station.querySelector('[data-result="personality"]');
+  const opened = new Set();
+
+  traits.forEach((trait) => {
+    trait.addEventListener('click', () => {
+      const text = trait.querySelector('.trait__text');
+      const hidden = text.hasAttribute('hidden');
+      text.toggleAttribute('hidden', !hidden);
+      trait.classList.toggle('is-active', hidden);
+      if (hidden) opened.add(trait);
+      if (result) {
+        result.textContent = `${opened.size}/3 Crew-Karten aufgedeckt`;
+      }
+      if (opened.size === traits.length) {
+        result.textContent = 'Crew komplett – lass uns zusammen den nächsten Sprint planen!';
+        enableNext(station);
+      }
+    });
+  });
+}
+
+stations.forEach((station) => {
+  if (station.id.includes('story')) initStoryStation(station);
+  if (station.id.includes('skills')) initSkillStation(station);
+  if (station.id.includes('projects')) initProjectsStation(station);
+  if (station.id.includes('personality')) initPersonalityStation(station);
+});
+
+if (heroStart) {
+  heroStart.addEventListener('click', () => {
+    showStation(0);
+  });
+}
+
+if (replayButton) {
+  replayButton.addEventListener('click', () => {
+    stations.forEach((station) => {
+      stationState.set(station.id, { completed: false });
+      const nextButton = station.querySelector('[data-action="next"]');
+      if (nextButton) nextButton.disabled = true;
+      station
+        .querySelectorAll('.is-active, .is-wrong')
+        .forEach((el) => el.classList.remove('is-active', 'is-wrong'));
+      station.querySelectorAll('[data-result]').forEach((res) => {
+        res.textContent = '';
+        res.removeAttribute('style');
+      });
+      station.querySelectorAll('.project-details').forEach((details) => details.setAttribute('hidden', ''));
+      station.querySelectorAll('.trait__text').forEach((text) => text.setAttribute('hidden', ''));
+    });
+    hornTaps = 0;
+    if (hornSecret) {
+      hornSecret.textContent = '';
+    }
+    showStation(0);
+  });
+}
+
+if (hornButton) {
+  hornButton.addEventListener('click', () => {
+    hornTaps += 1;
+    clearTimeout(hornTimeout);
+    hornTimeout = setTimeout(() => {
+      hornTaps = 0;
+      if (hornSecret) {
+        hornSecret.textContent = '';
+      }
+    }, 1200);
+
+    if (!hornSecret) return;
+
+    if (hornTaps >= 3) {
+      hornSecret.textContent = 'Nightshift-Snack: Franzbrötchen mit kaltem Brew-Kaffee.';
+      hornTaps = 0;
+    } else {
+      hornSecret.textContent = `Hupe ${hornTaps}/3`;
+    }
+  });
+}
+
+updateProgress();
+
